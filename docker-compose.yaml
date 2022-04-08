@@ -1,0 +1,59 @@
+volumes:
+  pg_data:
+
+services:
+  pg_db:
+    image: postgres:13.4-alpine
+    container_name: movies_postgres
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    env_file:
+      - ./admin_panel/.env
+
+  web_admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: web_admin
+    volumes:
+      - ./admin_panel/config/static:/data/config/static
+    env_file:
+      - ./admin_panel/.env
+    depends_on:
+      - pg_db
+
+  nginx:
+    image: nginx:1.21.6
+    container_name: movies_nginx
+    depends_on:
+      - web_admin
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./admin_panel/config/static:/data/static
+    ports:
+      - "80:80"
+
+  elasticsearch:
+    image: elasticsearch:7.17.1
+    container_name: elasticsearch
+    environment:
+        - discovery.type=single-node
+        - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+
+  etl:
+    build: pg_to_es/
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        window: 5s
+    depends_on:
+      - pg_db
+      - elasticsearch
+    env_file:
+      - ./pg_to_es/.env
+    volumes:
+      - ./pg_to_es/volumes/:/sites/states/
